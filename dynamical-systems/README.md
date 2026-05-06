@@ -1,4 +1,4 @@
-# Carter Hinsley
+# Dynamical Systems
 
 ## Posts
 
