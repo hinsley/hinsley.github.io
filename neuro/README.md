@@ -1,4 +1,4 @@
-# Carter Hinsley
+# Neuro
 
 ## Posts
 
