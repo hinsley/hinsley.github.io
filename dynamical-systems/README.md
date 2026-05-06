@@ -2,7 +2,7 @@
 
 ## Projects
 
-- [Fork Dynamics](https://forkdynamics.com)
+- [Fork Dynamics](https://forkdynamics.com): Browser-based numerical bifurcation continuation and dynamical systems analysis software
 
 ## Posts
 
