@@ -2,4 +2,4 @@
 
 ## Posts
 
-- [(2026-05-06) htop Truncation Error Estimation](/dynamical-systems/2026-05-06/htop-truncation-error-estimation)
+- [(2026-05-06) Estimating entropy error from truncated kneading determinants](/dynamical-systems/2026-05-06/htop-truncation-error-estimation)
