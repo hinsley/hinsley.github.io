@@ -1,6 +1,6 @@
 # Consumer EEG
 
-### 2025-01-27
+### 27 January 2025
 
 Since EEG (electroencephalography) is a low-cost and safe neuroimaging technique, I have compiled here a list of consumer EEG devices including both packaged products and do-it-yourself kits.
 

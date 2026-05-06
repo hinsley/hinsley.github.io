@@ -1,6 +1,6 @@
 # $h_{\rm top}$ approximation error due to Milnor-Thurston kneading determinant truncation
 
-### 2026-05-06
+### 6 May 2026
 
 Let $D(t) = \sum_{n \geq 0} a_nt^n$ denote the kneading determinant of a piecewise-continuous piecewise-monotone map $f: I \to I$, where $a_n \in \mathbb{Z}$. Then the topological entropy $h_{\rm top}$ satisfies $r = e^{-h_{\rm top}}$, where $r$ is the smallest zero of $D(t)$ (we have $r \in (0, 1]$, excluding the case of infinite topological entropy). For $N \in \mathbb{Z}_+$, let $D_N(t)$ denote the degree-$N$ truncated kneading determinant $\sum_{n = 0}^N a_nt^n$, and let $E_N(t) = D_N(t) - D(t)$ denote the truncation error.
 

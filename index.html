@@ -6,6 +6,36 @@
   <title>Carter Hinsley</title>
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4.13.1/lib/themes/vue.css">
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.min.css">
+  <style>
+    .sidebar-nav li.sidebar-folder {
+      position: relative;
+    }
+
+    .sidebar-nav li.sidebar-collapsed > ul {
+      display: none;
+    }
+
+    .sidebar-folder-toggle {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      color: #42b983;
+      cursor: pointer;
+      font: inherit;
+      line-height: 1;
+      margin: 0 0.25rem 0 -1rem;
+      padding: 0;
+      width: 0.75rem;
+    }
+
+    .sidebar-folder-toggle::before {
+      content: "-";
+    }
+
+    .sidebar-collapsed > .sidebar-folder-toggle::before {
+      content: "+";
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>
@@ -14,9 +44,53 @@
       name: 'Carter Hinsley',
       homepage: 'README.md',
       loadSidebar: true,
+      alias: {
+        '/.*/_sidebar.md': '/_sidebar.md'
+      },
       subMaxLevel: 0,
-      auto2top: true
+      auto2top: true,
+      sidebarDisplayLevel: 2
     };
+
+    window.$docsify.plugins = [].concat(function(hook) {
+      hook.doneEach(function() {
+        var sidebar = document.querySelector('.sidebar-nav');
+        if (!sidebar) return;
+
+        sidebar.querySelectorAll('li').forEach(function(item) {
+          var children = Array.prototype.slice.call(item.children);
+          var nestedList = children.find(function(child) {
+            return child.tagName === 'UL';
+          });
+          if (!nestedList) return;
+
+          item.classList.add('sidebar-folder');
+
+          var existingToggle = children.find(function(child) {
+            return child.classList && child.classList.contains('sidebar-folder-toggle');
+          });
+          var toggle = existingToggle || document.createElement('button');
+          if (!existingToggle) {
+            toggle.type = 'button';
+            toggle.className = 'sidebar-folder-toggle';
+            item.insertBefore(toggle, item.firstChild);
+          }
+
+          var hasActiveDescendant = !!item.querySelector('.active');
+          if (!hasActiveDescendant && item.parentElement.closest('.sidebar-folder')) {
+            item.classList.add('sidebar-collapsed');
+          }
+          toggle.setAttribute('aria-expanded', String(!item.classList.contains('sidebar-collapsed')));
+
+          toggle.onclick = function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var isCollapsed = item.classList.toggle('sidebar-collapsed');
+            toggle.setAttribute('aria-expanded', String(!isCollapsed));
+          };
+        });
+      });
+    }, window.$docsify.plugins || []);
   </script>
   <script src="//cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
