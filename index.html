@@ -80,10 +80,8 @@
           }
 
           var hasActiveDescendant = !!item.querySelector('.active');
-          if (!hasActiveDescendant && item.parentElement.closest('.sidebar-folder')) {
-            item.classList.add('sidebar-collapsed');
-          }
-          toggle.setAttribute('aria-expanded', String(!item.classList.contains('sidebar-collapsed')));
+          item.classList.toggle('sidebar-collapsed', !hasActiveDescendant);
+          toggle.setAttribute('aria-expanded', String(hasActiveDescendant));
 
           toggle.onclick = function(event) {
             event.preventDefault();
