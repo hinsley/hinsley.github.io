@@ -60,7 +60,7 @@ that matches the convergence rate of the above rule for the logistic and cubic m
 
 #### References
 
-[1] Alsedà Llu, Bobok J, Misiurewicz M, Snoha Ľubom. The Real Teapot. _Ergodic Theory and Dynamical Systems_. 2025;45(10):2945-2975. <https://doi.org/10.1017/etds.2025.15>
+[1] Alsedà, L., Bobok, J., Misiurewicz, M. & Snoha, Ľ. The Real Teapot. _Ergodic Theory and Dynamical Systems_. 2025;45(10):2945-2975. <https://doi.org/10.1017/etds.2025.15>
 
 [2] Collet, P., Crutchfield, J.P. & Eckmann, J.P. Computing the topological entropy of maps. _Commun.Math. Phys._ **88**, 257-262 (1983). <https://doi.org/10.1007/BF01209479>
 
