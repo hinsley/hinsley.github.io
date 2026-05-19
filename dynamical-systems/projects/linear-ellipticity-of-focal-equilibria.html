@@ -238,7 +238,6 @@
       <div class="toggles">
         <label><input id="showField" type="checkbox" checked /> vector field</label>
         <label><input id="showEllipse" type="checkbox" checked /> ellipse axes</label>
-        <label><input id="autoOutward" type="checkbox" checked /> outward branch</label>
         <label><input id="animate" type="checkbox" checked /> animated markers</label>
       </div>
     </div>
@@ -346,7 +345,7 @@
   }
   for (const def of viewDefs) makeControl(def, document.getElementById("viewControls"));
 
-  for (const id of ["showField", "showEllipse", "autoOutward", "animate"]) {
+  for (const id of ["showField", "showEllipse", "animate"]) {
     document.getElementById(id).addEventListener("change", scheduleRecompute);
   }
 
@@ -358,7 +357,6 @@
     params.nTraj = Math.round(params.nTraj);
     params.showField = document.getElementById("showField").checked;
     params.showEllipse = document.getElementById("showEllipse").checked;
-    params.autoOutward = document.getElementById("autoOutward").checked;
     params.animate = document.getElementById("animate").checked;
   }
 
@@ -501,11 +499,11 @@
     return { minW, maxW, minAbsW, maxAbsW, Eang, minRho, maxRho, signChanges };
   }
 
-  function computePath(theta, direction) {
+  function computePath(theta) {
     const path = [];
     let x = params.initRadius * Math.cos(theta);
     let y = params.initRadius * Math.sin(theta);
-    const baseH = 0.018 * direction;
+    const baseH = 0.018;
     const maxSteps = 3400;
     const stopR = params.viewRadius * 1.75;
     const tinyR = params.initRadius * 0.04;
@@ -535,13 +533,12 @@
     const nd = nonlinearDiagnostics(params.probeRadius);
     diagnostics.nonlin = nd;
 
-    const direction = (params.autoOutward && diagnostics.complex && diagnostics.alpha < 0) ? -1 : 1;
     paths = [];
     for (let i = 0; i < params.nTraj; i++) {
       const theta = 2*Math.PI*i/params.nTraj;
-      paths.push(computePath(theta, direction));
+      paths.push(computePath(theta));
     }
-    updateMetrics(direction);
+    updateMetrics();
   }
 
   function scheduleRecompute() {
@@ -557,7 +554,7 @@
     return el;
   }
 
-  function updateMetrics(direction) {
+  function updateMetrics() {
     const d = diagnostics;
     const n = d.nonlin;
     metricsEl.innerHTML = "";
@@ -572,7 +569,6 @@
       metric("trace", fmt(d.tr)),
       metric("det", fmt(d.det)),
       metric("disc = tr² − 4det", fmt(d.disc)),
-      metric("time direction", direction > 0 ? "forward" : "reverse"),
       metric(`Eθ(r=${fmt(params.probeRadius, 3)})`, fmt(n.Eang)),
       metric("min/max θ̇", `${fmt(n.minW)} / ${fmt(n.maxW)}`),
       metric("min/max ṙ/r", `${fmt(n.minRho)} / ${fmt(n.maxRho)}`, true)
