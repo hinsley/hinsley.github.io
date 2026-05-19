@@ -275,7 +275,6 @@
 
   const viewDefs = [
     { key: "viewRadius", label: "view R", min: 0.5, max: 12, step: 0.1, value: 4.0 },
-    { key: "initRadius", label: "start r", min: 0.005, max: 0.5, step: 0.005, value: 0.035 },
     { key: "probeRadius", label: "probe r", min: 0.01, max: 3.0, step: 0.01, value: 0.60 },
     { key: "nTraj", label: "curves", min: 4, max: 48, step: 1, value: 22 },
   ];
@@ -283,11 +282,12 @@
   const inputs = new Map();
   let coeffs = {};
   let params = {};
-  let paths = [];
+  let curvePaths = [];
+  let particles = [];
+  let sampleUnits = [];
   let diagnostics = null;
   let axes = null;
   let scheduled = false;
-  let frame = 0;
   let dpr = 1;
   let logicalW = 0;
   let logicalH = 0;
@@ -376,23 +376,23 @@
       if (p === "ellipse") {
         setValues({ a11: 0.12, a12: -2.40, a21: 0.60, a22: 0.12,
           b20: -0.06, b11: 0.12, b02: 0.02, c20: -0.02, c11: -0.10, c02: 0.04,
-          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 22 });
+          viewRadius: 4.0, probeRadius: 0.60, nTraj: 22 });
       } else if (p === "circle") {
         setValues({ a11: 0.10, a12: -1.20, a21: 1.20, a22: 0.10,
           b20: 0, b11: 0, b02: 0, c20: 0, c11: 0, c02: 0,
-          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 18 });
+          viewRadius: 4.0, probeRadius: 0.60, nTraj: 18 });
       } else if (p === "nonlinear") {
         setValues({ a11: 0.08, a12: -2.05, a21: 0.72, a22: 0.08,
           b20: -0.20, b11: 0.55, b02: 0.18, c20: -0.28, c11: -0.16, c02: 0.32,
-          viewRadius: 4.0, initRadius: 0.030, probeRadius: 0.80, nTraj: 26 });
+          viewRadius: 4.0, probeRadius: 0.80, nTraj: 26 });
       } else if (p === "stable") {
         setValues({ a11: -0.12, a12: -2.40, a21: 0.60, a22: -0.12,
           b20: -0.06, b11: 0.12, b02: 0.02, c20: -0.02, c11: -0.10, c02: 0.04,
-          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 22 });
+          viewRadius: 4.0, probeRadius: 0.60, nTraj: 22 });
       } else if (p === "purequad") {
         setValues({ a11: 0, a12: 0, a21: 0, a22: 0,
           b20: -0.15, b11: 0.70, b02: -0.10, c20: -0.55, c11: 0.05, c02: 0.35,
-          viewRadius: 4.0, initRadius: 0.12, probeRadius: 0.80, nTraj: 18 });
+          viewRadius: 4.0, probeRadius: 0.80, nTraj: 18 });
       } else if (p === "zeroquad") {
         setValues({ b20: 0, b11: 0, b02: 0, c20: 0, c11: 0, c02: 0 });
       }
@@ -499,20 +499,75 @@
     return { minW, maxW, minAbsW, maxAbsW, Eang, minRho, maxRho, signChanges };
   }
 
-  function computePath(theta) {
+  function ensureSamples(n) {
+    while (sampleUnits.length < n) {
+      sampleUnits.push([2*Math.random() - 1, 2*Math.random() - 1]);
+    }
+  }
+
+  function visibleBounds() {
+    const rect = canvas.getBoundingClientRect();
+    const w = logicalW || rect.width || 1;
+    const h = logicalH || rect.height || 1;
+    const scaleBasis = Math.max(1, Math.min(w, h));
+    return {
+      x: params.viewRadius * w / scaleBasis,
+      y: params.viewRadius * h / scaleBasis
+    };
+  }
+
+  function samplePoint(i) {
+    const s = sampleUnits[i];
+    const bounds = visibleBounds();
+    return [bounds.x * s[0], bounds.y * s[1]];
+  }
+
+  function randomViewportPoint() {
+    const bounds = visibleBounds();
+    return [(2*Math.random() - 1) * bounds.x, (2*Math.random() - 1) * bounds.y];
+  }
+
+  function hasStableLinearization(d) {
+    return d.tr < -1e-8 && d.det > 1e-8;
+  }
+
+  function outsideViewport(x, y) {
+    const bounds = visibleBounds();
+    return Math.abs(x) > bounds.x * 1.08 || Math.abs(y) > bounds.y * 1.08;
+  }
+
+  function stopSpeed() {
+    return Math.max(1e-5, params.viewRadius * 0.01);
+  }
+
+  function resetParticles() {
+    particles = [];
+    for (let i = 0; i < params.nTraj; i++) {
+      const p = randomViewportPoint();
+      particles.push({ x: p[0], y: p[1] });
+    }
+  }
+
+  function respawnParticle(p) {
+    const next = randomViewportPoint();
+    p.x = next[0];
+    p.y = next[1];
+  }
+
+  function integratePath(x0, y0, direction) {
     const path = [];
-    let x = params.initRadius * Math.cos(theta);
-    let y = params.initRadius * Math.sin(theta);
-    const baseH = 0.018;
+    let x = x0;
+    let y = y0;
+    const baseH = 0.018 * direction;
     const maxSteps = 3400;
-    const stopR = params.viewRadius * 1.75;
-    const tinyR = params.initRadius * 0.04;
+    const tinyR = params.viewRadius * 0.0025;
     for (let k = 0; k < maxSteps; k++) {
       path.push([x, y]);
       const rr = Math.hypot(x, y);
-      if (!Number.isFinite(rr) || rr > stopR || rr < tinyR) break;
+      if (!Number.isFinite(rr) || outsideViewport(x, y) || rr < tinyR) break;
       const [vx, vy] = f(x, y);
       const speed = Math.hypot(vx, vy);
+      if (!Number.isFinite(speed) || speed < stopSpeed()) break;
       let sub = Math.ceil(Math.abs(baseH) * speed / Math.max(0.035, params.viewRadius * 0.012));
       sub = clamp(sub, 1, 12);
       let h = baseH / sub;
@@ -526,6 +581,14 @@
     return path;
   }
 
+  function buildPaths(seed, stableLinearization) {
+    const forward = integratePath(seed[0], seed[1], 1);
+    if (!stableLinearization) return forward;
+
+    const backward = integratePath(seed[0], seed[1], -1);
+    return backward.slice().reverse().concat(forward.slice(1));
+  }
+
   function recompute() {
     scheduled = false;
     readInputs();
@@ -533,11 +596,13 @@
     const nd = nonlinearDiagnostics(params.probeRadius);
     diagnostics.nonlin = nd;
 
-    paths = [];
+    ensureSamples(params.nTraj);
+    const stableLinearization = hasStableLinearization(diagnostics);
+    curvePaths = [];
     for (let i = 0; i < params.nTraj; i++) {
-      const theta = 2*Math.PI*i/params.nTraj;
-      paths.push(computePath(theta));
+      curvePaths.push(buildPaths(samplePoint(i), stableLinearization));
     }
+    resetParticles();
     updateMetrics();
   }
 
@@ -746,13 +811,45 @@
     ctx.restore();
   }
 
+  function advanceParticles() {
+    const baseH = 0.035;
+    for (const p of particles) {
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || outsideViewport(p.x, p.y)) {
+        respawnParticle(p);
+        continue;
+      }
+
+      const [vx, vy] = f(p.x, p.y);
+      const speed = Math.hypot(vx, vy);
+      if (!Number.isFinite(speed) || speed < stopSpeed()) {
+        respawnParticle(p);
+        continue;
+      }
+
+      let sub = Math.ceil(baseH * speed / Math.max(0.035, params.viewRadius * 0.012));
+      sub = clamp(sub, 1, 12);
+      const h = baseH / sub;
+      for (let s = 0; s < sub; s++) {
+        const next = rk4(p.x, p.y, h);
+        p.x = next[0];
+        p.y = next[1];
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) break;
+      }
+
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || outsideViewport(p.x, p.y)) {
+        respawnParticle(p);
+      }
+    }
+  }
+
   function drawPaths() {
     ctx.save();
     ctx.lineWidth = 1.55;
-    for (let i = 0; i < paths.length; i++) {
-      const path = paths[i];
+    const n = curvePaths.length;
+    for (let i = 0; i < curvePaths.length; i++) {
+      const path = curvePaths[i];
       if (path.length < 2) continue;
-      ctx.strokeStyle = `hsla(${205 + 70*i/Math.max(1, paths.length-1)}, 90%, 68%, .55)`;
+      ctx.strokeStyle = `hsla(${205 + 70*i/Math.max(1, n-1)}, 90%, 68%, .55)`;
       ctx.beginPath();
       for (let j = 0; j < path.length; j++) {
         const p = toScreen(path[j][0], path[j][1]);
@@ -761,12 +858,11 @@
       ctx.stroke();
     }
     if (params.animate) {
-      for (let i = 0; i < paths.length; i++) {
-        const path = paths[i];
-        if (path.length < 2) continue;
-        const idx = Math.floor((frame*2.1 + i*37) % path.length);
-        const [sx, sy] = toScreen(path[idx][0], path[idx][1]);
-        ctx.fillStyle = `hsla(${205 + 70*i/Math.max(1, paths.length-1)}, 95%, 78%, .96)`;
+      advanceParticles();
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const [sx, sy] = toScreen(p.x, p.y);
+        ctx.fillStyle = `hsla(${205 + 70*i/Math.max(1, n-1)}, 95%, 78%, .96)`;
         ctx.beginPath();
         ctx.arc(sx, sy, 3.3, 0, 2*Math.PI);
         ctx.fill();
@@ -798,11 +894,10 @@
     drawPaths();
     drawEllipseAxes();
     drawOrigin();
-    frame++;
     requestAnimationFrame(draw);
   }
 
-  window.addEventListener("resize", () => { resize(); });
+  window.addEventListener("resize", () => { resize(); scheduleRecompute(); });
   recompute();
   draw();
 })();
