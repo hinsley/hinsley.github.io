@@ -1,0 +1,815 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Quadratic Planar Spiral Explorer</title>
+<style>
+  :root {
+    --bg: #10131a;
+    --panel: #171b24;
+    --panel2: #202632;
+    --text: #e6eaf0;
+    --muted: #a9b2c3;
+    --line: #364052;
+    --accent: #7ab8ff;
+    --accent2: #f5c66c;
+    --bad: #ff7b7b;
+    --good: #85d391;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: #0d1016;
+  }
+  header h1 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: .2px;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: minmax(440px, 1fr) 430px;
+    height: calc(100vh - 76px);
+    min-height: 620px;
+  }
+  #canvasWrap {
+    position: relative;
+    min-height: 500px;
+    background: radial-gradient(circle at 50% 50%, #151a23 0%, #0e1118 72%);
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  #hud {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    background: rgba(12, 15, 21, .75);
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 10px;
+    padding: 8px 10px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+    max-width: 380px;
+    backdrop-filter: blur(6px);
+  }
+  aside {
+    overflow-y: auto;
+    border-left: 1px solid var(--line);
+    background: var(--panel);
+    padding: 12px;
+  }
+  .panel {
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    border-radius: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 650;
+  }
+  .formula {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: nowrap;
+    color: #d7deea;
+    background: #111722;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px;
+    overflow-x: auto;
+  }
+  .note {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  button {
+    border: 1px solid var(--line);
+    background: #121824;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 9px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button:hover { border-color: #58718e; background: #172133; }
+  .coef-grid { display: grid; gap: 7px; }
+  .row {
+    display: grid;
+    grid-template-columns: 54px 1fr 72px;
+    gap: 8px;
+    align-items: center;
+    font-size: 12px;
+  }
+  .row label { color: var(--muted); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+  input[type="number"], select {
+    width: 100%;
+    background: #101622;
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 6px;
+    font-size: 12px;
+  }
+  .toggles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .toggles label { display: flex; gap: 7px; align-items: center; }
+  input[type="checkbox"] { accent-color: var(--accent); }
+  #metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .metric {
+    background: #111722;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 8px;
+    min-height: 58px;
+  }
+  .metric .k {
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 3px;
+  }
+  .metric .v {
+    font-size: 17px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .metric.wide { grid-column: span 2; }
+  .status {
+    margin-top: 8px;
+    border-radius: 8px;
+    padding: 8px;
+    background: #111722;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .status.good { border-color: rgba(133,211,145,.45); color: #c3e9cb; }
+  .status.bad { border-color: rgba(255,123,123,.45); color: #ffd0d0; }
+  @media (max-width: 950px) {
+    #app { grid-template-columns: 1fr; height: auto; }
+    #canvasWrap { height: 62vh; min-height: 420px; }
+    aside { border-left: none; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Quadratic planar spiral explorer</h1>
+  <div class="sub">System: linear + quadratic terms, no constant term. The origin is always an equilibrium. Drag coefficients to change the local spiral geometry and finite-radius angular speed.</div>
+</header>
+<div id="app">
+  <div id="canvasWrap">
+    <canvas id="phase"></canvas>
+    <div id="hud"></div>
+  </div>
+  <aside>
+    <div class="panel">
+      <h2>ODE</h2>
+      <div class="formula">
+        ẋ = a₁₁x + a₁₂y + b₂₀x² + b₁₁xy + b₀₂y²<br />
+        ẏ = a₂₁x + a₂₂y + c₂₀x² + c₁₁xy + c₀₂y²
+      </div>
+      <div class="note">For a true linear spiral, the linear matrix A must have complex eigenvalues. A purely degree-2 homogeneous system has A = 0, so Hartman–Grobman and E<sub>lin</sub> do not apply at the origin.</div>
+      <div class="buttons">
+        <button data-preset="ellipse">Elliptical spiral</button>
+        <button data-preset="circle">Circular spiral</button>
+        <button data-preset="nonlinear">Nonlinear sectors</button>
+        <button data-preset="stable">Stable spiral</button>
+        <button data-preset="purequad">Pure quadratic</button>
+        <button data-preset="zeroquad">Zero quadratic terms</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Linear coefficients</h2>
+      <div id="linearControls" class="coef-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Quadratic coefficients</h2>
+      <div id="quadControls" class="coef-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>View and sampling</h2>
+      <div id="viewControls" class="coef-grid"></div>
+      <div class="toggles">
+        <label><input id="showField" type="checkbox" checked /> vector field</label>
+        <label><input id="showEllipse" type="checkbox" checked /> ellipse axes</label>
+        <label><input id="autoOutward" type="checkbox" checked /> outward branch</label>
+        <label><input id="animate" type="checkbox" checked /> animated markers</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Live diagnostics</h2>
+      <div id="metrics"></div>
+      <div id="status" class="status"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("phase");
+  const ctx = canvas.getContext("2d");
+  const hud = document.getElementById("hud");
+  const metricsEl = document.getElementById("metrics");
+  const statusEl = document.getElementById("status");
+
+  const coefDefs = [
+    { group: "linear", key: "a11", label: "a₁₁", min: -5, max: 5, step: 0.01, value: 0.12 },
+    { group: "linear", key: "a12", label: "a₁₂", min: -5, max: 5, step: 0.01, value: -2.40 },
+    { group: "linear", key: "a21", label: "a₂₁", min: -5, max: 5, step: 0.01, value: 0.60 },
+    { group: "linear", key: "a22", label: "a₂₂", min: -5, max: 5, step: 0.01, value: 0.12 },
+    { group: "quad", key: "b20", label: "b₂₀", min: -3, max: 3, step: 0.01, value: -0.06 },
+    { group: "quad", key: "b11", label: "b₁₁", min: -3, max: 3, step: 0.01, value: 0.12 },
+    { group: "quad", key: "b02", label: "b₀₂", min: -3, max: 3, step: 0.01, value: 0.02 },
+    { group: "quad", key: "c20", label: "c₂₀", min: -3, max: 3, step: 0.01, value: -0.02 },
+    { group: "quad", key: "c11", label: "c₁₁", min: -3, max: 3, step: 0.01, value: -0.10 },
+    { group: "quad", key: "c02", label: "c₀₂", min: -3, max: 3, step: 0.01, value: 0.04 },
+  ];
+
+  const viewDefs = [
+    { key: "viewRadius", label: "view R", min: 0.5, max: 12, step: 0.1, value: 4.0 },
+    { key: "initRadius", label: "start r", min: 0.005, max: 0.5, step: 0.005, value: 0.035 },
+    { key: "probeRadius", label: "probe r", min: 0.01, max: 3.0, step: 0.01, value: 0.60 },
+    { key: "nTraj", label: "curves", min: 4, max: 48, step: 1, value: 22 },
+  ];
+
+  const inputs = new Map();
+  let coeffs = {};
+  let params = {};
+  let paths = [];
+  let diagnostics = null;
+  let axes = null;
+  let scheduled = false;
+  let frame = 0;
+  let dpr = 1;
+  let logicalW = 0;
+  let logicalH = 0;
+
+  function fmt(x, digits = 4) {
+    if (x === null || x === undefined || Number.isNaN(x)) return "—";
+    if (!Number.isFinite(x)) return x > 0 ? "∞" : "−∞";
+    const ax = Math.abs(x);
+    if (ax !== 0 && (ax < 0.001 || ax >= 10000)) return x.toExponential(2);
+    return Number(x).toPrecision(digits).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1");
+  }
+
+  function clamp(x, lo, hi) { return Math.max(lo, Math.min(hi, x)); }
+
+  function makeControl(def, parent) {
+    const row = document.createElement("div");
+    row.className = "row";
+    const lab = document.createElement("label");
+    lab.textContent = def.label;
+    lab.title = def.key;
+    const range = document.createElement("input");
+    range.type = "range";
+    range.min = def.min;
+    range.max = def.max;
+    range.step = def.step;
+    range.value = def.value;
+    const num = document.createElement("input");
+    num.type = "number";
+    num.min = def.min;
+    num.max = def.max;
+    num.step = def.step;
+    num.value = def.value;
+    row.append(lab, range, num);
+    parent.appendChild(row);
+    inputs.set(def.key, { range, num, def });
+
+    function syncFromRange() {
+      num.value = range.value;
+      scheduleRecompute();
+    }
+    function syncFromNum() {
+      let v = parseFloat(num.value);
+      if (!Number.isFinite(v)) v = def.value;
+      v = clamp(v, Number(def.min), Number(def.max));
+      range.value = String(v);
+      num.value = String(v);
+      scheduleRecompute();
+    }
+    range.addEventListener("input", syncFromRange);
+    num.addEventListener("input", syncFromNum);
+  }
+
+  for (const def of coefDefs) {
+    makeControl(def, document.getElementById(def.group === "linear" ? "linearControls" : "quadControls"));
+  }
+  for (const def of viewDefs) makeControl(def, document.getElementById("viewControls"));
+
+  for (const id of ["showField", "showEllipse", "autoOutward", "animate"]) {
+    document.getElementById(id).addEventListener("change", scheduleRecompute);
+  }
+
+  function readInputs() {
+    coeffs = {};
+    params = {};
+    for (const def of coefDefs) coeffs[def.key] = parseFloat(inputs.get(def.key).range.value);
+    for (const def of viewDefs) params[def.key] = parseFloat(inputs.get(def.key).range.value);
+    params.nTraj = Math.round(params.nTraj);
+    params.showField = document.getElementById("showField").checked;
+    params.showEllipse = document.getElementById("showEllipse").checked;
+    params.autoOutward = document.getElementById("autoOutward").checked;
+    params.animate = document.getElementById("animate").checked;
+  }
+
+  function setValues(values) {
+    for (const [k, v] of Object.entries(values)) {
+      const item = inputs.get(k);
+      if (!item) continue;
+      item.range.value = v;
+      item.num.value = v;
+    }
+    scheduleRecompute();
+  }
+
+  document.querySelectorAll("button[data-preset]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const p = btn.dataset.preset;
+      if (p === "ellipse") {
+        setValues({ a11: 0.12, a12: -2.40, a21: 0.60, a22: 0.12,
+          b20: -0.06, b11: 0.12, b02: 0.02, c20: -0.02, c11: -0.10, c02: 0.04,
+          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 22 });
+      } else if (p === "circle") {
+        setValues({ a11: 0.10, a12: -1.20, a21: 1.20, a22: 0.10,
+          b20: 0, b11: 0, b02: 0, c20: 0, c11: 0, c02: 0,
+          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 18 });
+      } else if (p === "nonlinear") {
+        setValues({ a11: 0.08, a12: -2.05, a21: 0.72, a22: 0.08,
+          b20: -0.20, b11: 0.55, b02: 0.18, c20: -0.28, c11: -0.16, c02: 0.32,
+          viewRadius: 4.0, initRadius: 0.030, probeRadius: 0.80, nTraj: 26 });
+      } else if (p === "stable") {
+        setValues({ a11: -0.12, a12: -2.40, a21: 0.60, a22: -0.12,
+          b20: -0.06, b11: 0.12, b02: 0.02, c20: -0.02, c11: -0.10, c02: 0.04,
+          viewRadius: 4.0, initRadius: 0.035, probeRadius: 0.60, nTraj: 22 });
+      } else if (p === "purequad") {
+        setValues({ a11: 0, a12: 0, a21: 0, a22: 0,
+          b20: -0.15, b11: 0.70, b02: -0.10, c20: -0.55, c11: 0.05, c02: 0.35,
+          viewRadius: 4.0, initRadius: 0.12, probeRadius: 0.80, nTraj: 18 });
+      } else if (p === "zeroquad") {
+        setValues({ b20: 0, b11: 0, b02: 0, c20: 0, c11: 0, c02: 0 });
+      }
+    });
+  });
+
+  function f(x, y) {
+    const c = coeffs;
+    return [
+      c.a11*x + c.a12*y + c.b20*x*x + c.b11*x*y + c.b02*y*y,
+      c.a21*x + c.a22*y + c.c20*x*x + c.c11*x*y + c.c02*y*y
+    ];
+  }
+
+  function rk4(x, y, h) {
+    const k1 = f(x, y);
+    const k2 = f(x + 0.5*h*k1[0], y + 0.5*h*k1[1]);
+    const k3 = f(x + 0.5*h*k2[0], y + 0.5*h*k2[1]);
+    const k4 = f(x + h*k3[0], y + h*k3[1]);
+    return [
+      x + h*(k1[0] + 2*k2[0] + 2*k3[0] + k4[0]) / 6,
+      y + h*(k1[1] + 2*k2[1] + 2*k3[1] + k4[1]) / 6
+    ];
+  }
+
+  function complexEigenBasis(a, b, c, d, alpha, omega) {
+    if (Math.abs(b) >= Math.abs(c)) {
+      return { p: [b, alpha - a], q: [0, omega] };
+    }
+    return { p: [alpha - d, c], q: [omega, 0] };
+  }
+
+  function ellipseDiagnostics() {
+    const a = coeffs.a11, b = coeffs.a12, c = coeffs.a21, d = coeffs.a22;
+    const tr = a + d;
+    const det = a*d - b*c;
+    const disc = tr*tr - 4*det;
+    const alpha = tr / 2;
+    const omega2 = det - alpha*alpha;
+    const complex = omega2 > 1e-12;
+    const omega = complex ? Math.sqrt(omega2) : 0;
+    const out = { tr, det, disc, alpha, omega, complex, E: null, linAngularRatio: null, growthPerTurn: null, p: null, q: null, major: null, minor: null, sigmaMax: null, sigmaMin: null };
+    if (!complex) return out;
+
+    const basis = complexEigenBasis(a, b, c, d, alpha, omega);
+    const p = basis.p, q = basis.q;
+    const g11 = p[0]*p[0] + p[1]*p[1];
+    const g12 = p[0]*q[0] + p[1]*q[1];
+    const g22 = q[0]*q[0] + q[1]*q[1];
+    const gt = g11 + g22;
+    const gd = Math.sqrt(Math.max(0, (g11-g22)*(g11-g22) + 4*g12*g12));
+    const evMax = (gt + gd) / 2;
+    const evMin = (gt - gd) / 2;
+    const sigmaMax = Math.sqrt(Math.max(evMax, 0));
+    const sigmaMin = Math.sqrt(Math.max(evMin, 0));
+    const E = sigmaMin > 1e-14 ? sigmaMax / sigmaMin : Infinity;
+
+    const m00 = p[0]*p[0] + q[0]*q[0];
+    const m01 = p[0]*p[1] + q[0]*q[1];
+    const m11 = p[1]*p[1] + q[1]*q[1];
+    const mt = m00 + m11;
+    const md = Math.sqrt(Math.max(0, (m00-m11)*(m00-m11) + 4*m01*m01));
+    const lamMax = (mt + md) / 2;
+    let major;
+    if (Math.abs(m01) > 1e-12) major = [lamMax - m11, m01];
+    else major = m00 >= m11 ? [1, 0] : [0, 1];
+    const len = Math.hypot(major[0], major[1]) || 1;
+    major = [major[0] / len, major[1] / len];
+    const minor = [-major[1], major[0]];
+
+    out.E = E;
+    out.linAngularRatio = E*E;
+    out.growthPerTurn = Math.exp(alpha * 2*Math.PI / omega);
+    out.p = p; out.q = q;
+    out.major = major; out.minor = minor;
+    out.sigmaMax = sigmaMax; out.sigmaMin = sigmaMin;
+    return out;
+  }
+
+  function nonlinearDiagnostics(r) {
+    const n = 720;
+    let minW = Infinity, maxW = -Infinity, minAbsW = Infinity, maxAbsW = 0;
+    let minRho = Infinity, maxRho = -Infinity;
+    let signChanges = 0;
+    let lastSign = 0;
+    for (let i = 0; i < n; i++) {
+      const th = 2*Math.PI*i/n;
+      const x = r * Math.cos(th), y = r * Math.sin(th);
+      const [vx, vy] = f(x, y);
+      const r2 = r*r;
+      const w = (x*vy - y*vx) / r2;
+      const rho = (x*vx + y*vy) / r2;
+      minW = Math.min(minW, w);
+      maxW = Math.max(maxW, w);
+      minAbsW = Math.min(minAbsW, Math.abs(w));
+      maxAbsW = Math.max(maxAbsW, Math.abs(w));
+      minRho = Math.min(minRho, rho);
+      maxRho = Math.max(maxRho, rho);
+      const s = Math.sign(w);
+      if (s !== 0 && lastSign !== 0 && s !== lastSign) signChanges++;
+      if (s !== 0) lastSign = s;
+    }
+    const Eang = minAbsW > 1e-9 ? maxAbsW / minAbsW : Infinity;
+    return { minW, maxW, minAbsW, maxAbsW, Eang, minRho, maxRho, signChanges };
+  }
+
+  function computePath(theta, direction) {
+    const path = [];
+    let x = params.initRadius * Math.cos(theta);
+    let y = params.initRadius * Math.sin(theta);
+    const baseH = 0.018 * direction;
+    const maxSteps = 3400;
+    const stopR = params.viewRadius * 1.75;
+    const tinyR = params.initRadius * 0.04;
+    for (let k = 0; k < maxSteps; k++) {
+      path.push([x, y]);
+      const rr = Math.hypot(x, y);
+      if (!Number.isFinite(rr) || rr > stopR || rr < tinyR) break;
+      const [vx, vy] = f(x, y);
+      const speed = Math.hypot(vx, vy);
+      let sub = Math.ceil(Math.abs(baseH) * speed / Math.max(0.035, params.viewRadius * 0.012));
+      sub = clamp(sub, 1, 12);
+      let h = baseH / sub;
+      for (let s = 0; s < sub; s++) {
+        const next = rk4(x, y, h);
+        x = next[0]; y = next[1];
+        if (!Number.isFinite(x) || !Number.isFinite(y)) break;
+      }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) break;
+    }
+    return path;
+  }
+
+  function recompute() {
+    scheduled = false;
+    readInputs();
+    diagnostics = ellipseDiagnostics();
+    const nd = nonlinearDiagnostics(params.probeRadius);
+    diagnostics.nonlin = nd;
+
+    const direction = (params.autoOutward && diagnostics.complex && diagnostics.alpha < 0) ? -1 : 1;
+    paths = [];
+    for (let i = 0; i < params.nTraj; i++) {
+      const theta = 2*Math.PI*i/params.nTraj;
+      paths.push(computePath(theta, direction));
+    }
+    updateMetrics(direction);
+  }
+
+  function scheduleRecompute() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(recompute);
+  }
+
+  function metric(k, v, wide = false) {
+    const el = document.createElement("div");
+    el.className = "metric" + (wide ? " wide" : "");
+    el.innerHTML = `<div class="k">${k}</div><div class="v">${v}</div>`;
+    return el;
+  }
+
+  function updateMetrics(direction) {
+    const d = diagnostics;
+    const n = d.nonlin;
+    metricsEl.innerHTML = "";
+    const type = d.complex ? (d.alpha > 1e-8 ? "unstable spiral" : d.alpha < -1e-8 ? "stable spiral" : "linear center") : "not a linear spiral";
+    metricsEl.append(
+      metric("linear type", type, true),
+      metric("α = Re λ", fmt(d.alpha)),
+      metric("ω = Im λ", d.complex ? fmt(d.omega) : "—"),
+      metric("Eₗᵢₙ", d.complex ? fmt(d.E) : "—"),
+      metric("visible angular ratio Eₗᵢₙ²", d.complex ? fmt(d.linAngularRatio) : "—"),
+      metric("growth per turn", d.complex ? fmt(d.growthPerTurn) : "—"),
+      metric("trace", fmt(d.tr)),
+      metric("det", fmt(d.det)),
+      metric("disc = tr² − 4det", fmt(d.disc)),
+      metric("time direction", direction > 0 ? "forward" : "reverse"),
+      metric(`Eθ(r=${fmt(params.probeRadius, 3)})`, fmt(n.Eang)),
+      metric("min/max θ̇", `${fmt(n.minW)} / ${fmt(n.maxW)}`),
+      metric("min/max ṙ/r", `${fmt(n.minRho)} / ${fmt(n.maxRho)}`, true)
+    );
+
+    statusEl.className = "status";
+    if (d.complex) {
+      statusEl.classList.add("good");
+      statusEl.innerHTML = `A has eigenvalues ${fmt(d.alpha)} ± ${fmt(d.omega)}i. ` +
+        `The ellipse overlay shows the principal axes of the linearized spiral. ` +
+        `Quadratic terms affect the finite-radius quantities Eθ and ṙ/r, but not E<sub>lin</sub>.`;
+    } else {
+      statusEl.classList.add("bad");
+      statusEl.innerHTML = `The linearization does not have complex eigenvalues. ` +
+        `E<sub>lin</sub> is undefined here. To see a Hartman–Grobman-type spiral, choose a preset with complex linear eigenvalues.`;
+    }
+
+    hud.innerHTML = d.complex ?
+      `E<sub>lin</sub> = <b>${fmt(d.E)}</b><br>` +
+      `α = ${fmt(d.alpha)}, ω = ${fmt(d.omega)}<br>` +
+      `Eθ at r = ${fmt(params.probeRadius, 3)}: ${fmt(n.Eang)}<br>` +
+      `dashed circle: probe radius; ellipse: linear major/minor axes` :
+      `No complex linear eigenpair at the origin.<br>E<sub>lin</sub> is undefined.<br>Try “Elliptical spiral” or “Circular spiral”.`;
+  }
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    logicalW = Math.max(1, Math.floor(rect.width));
+    logicalH = Math.max(1, Math.floor(rect.height));
+    canvas.width = Math.floor(logicalW * dpr);
+    canvas.height = Math.floor(logicalH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function toScreen(x, y) {
+    const s = Math.min(logicalW, logicalH) / (2 * params.viewRadius);
+    return [logicalW/2 + x*s, logicalH/2 - y*s];
+  }
+
+  function niceStep(raw) {
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const m = raw / pow;
+    if (m < 1.5) return pow;
+    if (m < 3.5) return 2*pow;
+    if (m < 7.5) return 5*pow;
+    return 10*pow;
+  }
+
+  function drawGrid() {
+    const R = params.viewRadius;
+    const step = niceStep((2*R) / Math.max(4, Math.min(logicalW, logicalH) / 70));
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(160,178,205,.12)";
+    ctx.beginPath();
+    for (let x = -Math.ceil(R/step)*step; x <= R + 1e-9; x += step) {
+      const p1 = toScreen(x, -R), p2 = toScreen(x, R);
+      ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    }
+    for (let y = -Math.ceil(R/step)*step; y <= R + 1e-9; y += step) {
+      const p1 = toScreen(-R, y), p2 = toScreen(R, y);
+      ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(230,234,240,.42)";
+    ctx.beginPath();
+    let p1 = toScreen(-R, 0), p2 = toScreen(R, 0);
+    ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    p1 = toScreen(0, -R); p2 = toScreen(0, R);
+    ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawArrow(x, y, vx, vy, alpha) {
+    const [sx, sy] = toScreen(x, y);
+    const len = Math.hypot(vx, vy);
+    if (!Number.isFinite(len) || len < 1e-9) return;
+    const ux = vx / len, uy = -vy / len;
+    const L = 13 * alpha + 6;
+    const ex = sx + ux*L, ey = sy + uy*L;
+    const ah = 3.8;
+    ctx.moveTo(sx - ux*L*0.35, sy - uy*L*0.35);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - ux*ah - uy*ah*0.7, ey - uy*ah + ux*ah*0.7);
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - ux*ah + uy*ah*0.7, ey - uy*ah - ux*ah*0.7);
+  }
+
+  function drawVectorField() {
+    if (!params.showField) return;
+    const R = params.viewRadius;
+    const N = 15;
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(122,184,255,.23)";
+    ctx.beginPath();
+    for (let i = -N; i <= N; i++) {
+      for (let j = -N; j <= N; j++) {
+        const x = i*R/N;
+        const y = j*R/N;
+        if (Math.hypot(x, y) < R*0.03) continue;
+        const [vx, vy] = f(x, y);
+        const mag = Math.hypot(vx, vy);
+        const alpha = clamp(Math.tanh(mag / Math.max(0.6, R)), 0.25, 1);
+        drawArrow(x, y, vx, vy, alpha);
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawProbeCircle() {
+    const r = params.probeRadius;
+    if (r <= 0 || r > params.viewRadius*1.25) return;
+    const center = toScreen(0, 0);
+    const p = toScreen(r, 0);
+    const rr = Math.abs(p[0] - center[0]);
+    ctx.save();
+    ctx.strokeStyle = "rgba(245,198,108,.38)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.arc(center[0], center[1], rr, 0, 2*Math.PI);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawEllipseAxes() {
+    if (!params.showEllipse || !diagnostics || !diagnostics.complex) return;
+    const E = diagnostics.E;
+    if (!Number.isFinite(E) || E <= 0) return;
+    const R = params.viewRadius;
+    const majorLen = R * 0.36;
+    const minorLen = majorLen / E;
+    const u = diagnostics.major;
+    const v = diagnostics.minor;
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(245,198,108,.95)";
+    ctx.beginPath();
+    for (let i = 0; i <= 180; i++) {
+      const t = 2*Math.PI*i/180;
+      const x = u[0]*majorLen*Math.cos(t) + v[0]*minorLen*Math.sin(t);
+      const y = u[1]*majorLen*Math.cos(t) + v[1]*minorLen*Math.sin(t);
+      const p = toScreen(x, y);
+      if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+    }
+    ctx.stroke();
+
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "rgba(245,198,108,.95)";
+    ctx.beginPath();
+    let p1 = toScreen(-u[0]*majorLen, -u[1]*majorLen);
+    let p2 = toScreen( u[0]*majorLen,  u[1]*majorLen);
+    ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    ctx.stroke();
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(122,184,255,.95)";
+    ctx.beginPath();
+    p1 = toScreen(-v[0]*minorLen, -v[1]*minorLen);
+    p2 = toScreen( v[0]*minorLen,  v[1]*minorLen);
+    ctx.moveTo(p1[0], p1[1]); ctx.lineTo(p2[0], p2[1]);
+    ctx.stroke();
+
+    ctx.font = "12px ui-sans-serif, system-ui";
+    ctx.fillStyle = "rgba(245,198,108,.95)";
+    p2 = toScreen(u[0]*majorLen, u[1]*majorLen);
+    ctx.fillText("major", p2[0] + 6, p2[1] - 6);
+    ctx.fillStyle = "rgba(122,184,255,.95)";
+    p2 = toScreen(v[0]*minorLen, v[1]*minorLen);
+    ctx.fillText("minor", p2[0] + 6, p2[1] - 6);
+    ctx.restore();
+  }
+
+  function drawPaths() {
+    ctx.save();
+    ctx.lineWidth = 1.55;
+    for (let i = 0; i < paths.length; i++) {
+      const path = paths[i];
+      if (path.length < 2) continue;
+      ctx.strokeStyle = `hsla(${205 + 70*i/Math.max(1, paths.length-1)}, 90%, 68%, .55)`;
+      ctx.beginPath();
+      for (let j = 0; j < path.length; j++) {
+        const p = toScreen(path[j][0], path[j][1]);
+        if (j === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+      }
+      ctx.stroke();
+    }
+    if (params.animate) {
+      for (let i = 0; i < paths.length; i++) {
+        const path = paths[i];
+        if (path.length < 2) continue;
+        const idx = Math.floor((frame*2.1 + i*37) % path.length);
+        const [sx, sy] = toScreen(path[idx][0], path[idx][1]);
+        ctx.fillStyle = `hsla(${205 + 70*i/Math.max(1, paths.length-1)}, 95%, 78%, .96)`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 3.3, 0, 2*Math.PI);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawOrigin() {
+    const p = toScreen(0, 0);
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0,0,0,.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 4, 0, 2*Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function draw() {
+    if (!params.viewRadius) readInputs();
+    resize();
+    ctx.clearRect(0, 0, logicalW, logicalH);
+    drawGrid();
+    drawVectorField();
+    drawProbeCircle();
+    drawPaths();
+    drawEllipseAxes();
+    drawOrigin();
+    frame++;
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener("resize", () => { resize(); });
+  recompute();
+  draw();
+})();
+</script>
+</body>
+</html>
