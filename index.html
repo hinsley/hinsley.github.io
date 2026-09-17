@@ -7,6 +7,57 @@
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4.13.1/lib/themes/vue.css">
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/katex@0.16.45/dist/katex.min.css">
   <style>
+    .markdown-section {
+      width: calc(100% - 40px);
+      max-width: 48rem;
+      padding: 36px 0 64px;
+      font-size: 18px;
+    }
+
+    .markdown-section p,
+    .markdown-section ul,
+    .markdown-section ol {
+      line-height: 1.65;
+    }
+
+    .markdown-section h1 {
+      font-size: clamp(28px, 3vw, 36px);
+      line-height: 1.2;
+    }
+
+    .markdown-section em {
+      color: inherit;
+    }
+
+    .markdown-section a {
+      text-underline-offset: 0.15em;
+    }
+
+    .sidebar .sidebar-nav li > a {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      line-height: 1.5;
+      padding: 4px 12px 4px 0;
+    }
+
+    .markdown-section .katex-display {
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.3em 0;
+    }
+
+    .markdown-section .katex-display > .katex {
+      width: max-content;
+      min-width: 100%;
+    }
+
+    @media (max-width: 600px) {
+      .markdown-section {
+        font-size: 17px;
+        padding-top: 28px;
+      }
+    }
+
     .sidebar-nav li.sidebar-folder {
       position: relative;
     }
