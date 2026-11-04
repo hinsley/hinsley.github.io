@@ -2,6 +2,7 @@
 
 ## Projects
 
+- <a href="/dynamical-systems/projects/chebyshev-cubic-kneading-diagram.html" data-no-router>Chebyshev cubic kneading diagram</a>: Symbolic parameter-space sweep of a simple multimodal interval map
 - [Fork Dynamics](https://forkdynamics.com): Browser-based numerical bifurcation continuation and dynamical systems analysis software
 - <a href="/dynamical-systems/projects/parameter-continuation-rossler-like-folding.html" data-no-router>Parameter continuation of Rössler-like folding</a>: Tracking critical points seeded by 2D unstable manifolds of saddle-foci
 - <a href="/dynamical-systems/projects/rossler-outer-boundary-kneading-diagram.html" data-no-router>Rössler outer boundary kneading diagram</a>: Illustrating changes in global topological organization of the Rössler attractor family
