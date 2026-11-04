@@ -15,18 +15,20 @@
 <details><summary>Orbit values and export</summary><p class="hint">Values start at the selected discard count. Exports include the displayed segments of both critical orbits and the custom orbit when set.</p><button id="download">Download orbit CSV</button><table><thead><tr><th>n</th><th class="red">From −½</th><th class="blue">From +½</th><th class="purple" id="customColumn" hidden>Custom</th></tr></thead><tbody id="values"></tbody></table></details>
 </section><section class="card"><div class="row between"><h2>Cobweb diagram</h2><div class="legend"><label class="red"><input id="showLeft" type="checkbox" checked> From −½</label><label class="blue"><input id="showRight" type="checkbox" checked> From +½</label><label class="purple"><input id="showCustom" type="checkbox" checked disabled> Custom</label></div></div>
 <div class="row controls"><label>Steps <input id="steps" type="number" value="80" min="1" max="2000" step="1"></label><label>Discard <input id="burn" type="number" value="0" min="0" max="100000" step="1"></label><button id="recompute">Update</button></div>
-<div class="row between controls"><span class="purple mono" id="customValue" aria-live="polite">Custom x₀: not set</span><button id="clearCustom" disabled>Clear custom orbit</button></div><p class="hint">Click or drag in the cobweb to set a custom x₀ using the horizontal position. Its orbit is calculated immediately.</p>
+<div class="row between controls"><span class="purple mono" id="customValue" aria-live="polite">Custom x₀: not set</span><div class="row"><button id="findChaos">Find chaotic orbit</button><button id="clearCustom" disabled>Clear custom orbit</button></div></div><p class="hint">Click or drag in the cobweb to set a custom x₀ using the horizontal position. Its orbit is calculated immediately.</p>
+<p class="hint" id="chaosStatus" role="status" aria-live="polite">Find a chaotic orbit using recurrent inverse branches, including repellers.</p>
 <div class="canvas-wrap"><canvas id="cobweb" aria-label="Clickable cobweb diagram: select a custom initial condition by horizontal position"></canvas></div>
 <div class="row controls"><button id="restart" aria-label="Restart animation">↺</button><button id="play" class="primary">Play</button><button id="step">Step</button><input id="frame" aria-label="Displayed iterate count" type="range" min="0" max="80" value="80"><span id="frameValue" class="mono">80</span></div>
 <div class="row between"><label>View <select id="range"><option value="auto">Auto fit</option><option value="1">−1 to 1</option><option value="2">−2 to 2</option><option value="4">−4 to 4</option></select></label><span class="muted">Dark curve: f(x) · dashed line: y = x</span></div>
 <div class="series"><canvas id="series" aria-label="Orbit values versus iteration"></canvas></div><p class="hint">The cobweb starts on y = x. Each vertical segment applies f; each horizontal segment returns to the diagonal. Discard shifts the displayed starting iterate, while each orbit keeps its original initial condition. The purple diamond marks the custom x₀.</p>
 </section></main>
-<p class="footer">The backgrounds and contour geometry are fixed from saved 6000 × 6000 scans. Entropy is estimated for the continuous extension of the cubic to the compactified real line; it is not inferred from the Lyapunov exponents. Identical degree-64 kneading matrices share cached entropy estimates. Degree-32 comparisons and the calculation method are documented in the <a href="https://hinsley.github.io/dynamical-systems/projects/chebyshev-entropy-method.html">entropy notes</a>. Orbit values are calculated locally at your exact selected (u, v), rather than at the nearest grid sample. Chaotic trajectories may differ from the GPU trajectories through rounding. Escape is reported only after crossing a parameter-dependent bound that guarantees continued growth.</p>
+<p class="footer">The backgrounds and contour geometry are fixed from saved 6000 × 6000 scans. Entropy is estimated for the continuous extension of the cubic to the compactified real line; it is not inferred from the Lyapunov exponents. Identical degree-64 kneading matrices share cached entropy estimates. Degree-32 comparisons and the calculation method are documented in the <a href="https://hinsley.github.io/dynamical-systems/projects/chebyshev-entropy-method.html">entropy notes</a>. Orbit values are calculated locally at your exact selected (u, v), rather than at the nearest grid sample. Manually selected initial conditions use forward iteration. The chaotic-orbit finder uses a numerically checked expanding return system and inverse branches to retain a nonperiodic symbolic itinerary, even on a repeller. Its CSV includes the method and lap symbols. It does not rerun the entropy sweep, and failure to find an orbit does not establish zero entropy. Chaotic trajectories may differ from the GPU trajectories through rounding. Escape is reported only after crossing a parameter-dependent bound that guarantees continued growth.</p>
 <script>
 'use strict';
 const BACKGROUNDS={heatmap:'chebyshev-assets/heatmap.webp',overlay:'chebyshev-assets/overlay.webp',entropy:'chebyshev-assets/entropy.webp',entropyOverlay:'chebyshev-assets/entropy_overlay.webp'};
 const $=id=>document.getElementById(id), colors=['#d9261f','#194de6','#8a35b0'];
-const state={metric:'lyapunov',u:.8,v:-.8,view:[-2,2,-2,2],steps:80,burn:0,frame:80,orbits:[],customSeed:null,playing:false};
+const state={metric:'lyapunov',u:.8,v:-.8,view:[-2,2,-2,2],steps:80,burn:0,frame:80,orbits:[],customSeed:null,customTrace:null,playing:false};
+let chaosWorker=null,chaosGeneration=0,chaosOffset=1;
 const images={};let selectedTimer=0,animation=0,lastAnimation=0;
 function map(x,u=state.u,v=state.v){return ((u-v)/2)*(4*x*x*x-3*x)+(u+v)/2;}
 function escapeBound(u,v){const d=Math.abs(u-v);return d===0?Infinity:Math.max(2,Math.sqrt((1.5*d+Math.abs((u+v)/2)+2)/(2*d)));}
@@ -59,19 +61,22 @@ function refreshOrbitDisplay(){
  drawOrbits();
 }
 function recompute(){
- stop();state.orbits=[orbit(-.5,state.u,state.v,state.burn,state.steps),orbit(.5,state.u,state.v,state.burn,state.steps)];
- if(state.customSeed!==null)state.orbits.push(orbit(state.customSeed,state.u,state.v,state.burn,state.steps));
+ cancelChaosSearch();stop();state.orbits=[orbit(-.5,state.u,state.v,state.burn,state.steps),orbit(.5,state.u,state.v,state.burn,state.steps)];
+ if(state.customTrace&&(state.customTrace.u!==state.u||state.customTrace.v!==state.v)){state.customTrace=null;$('chaosStatus').textContent='Parameters changed. Find again to locate a chaotic orbit for this map.';}
+ if(state.customSeed!==null)state.orbits.push(customOrbit());
+ if(state.customTrace)showChaosResult();
  state.frame=Math.min(state.frame,state.steps);$('frame').max=state.steps;$('u').value=state.u.toFixed(8);$('v').value=state.v.toFixed(8);$('hover').textContent=`u = ${state.u.toFixed(6)} · v = ${state.v.toFixed(6)}`;
  drawParameter();refreshOrbitDisplay();
 }
 function setCustomSeed(seed){
  if(!Number.isFinite(seed))return;
+ cancelChaosSearch();state.customTrace=null;$('chaosStatus').textContent='Manual initial condition · forward iteration.';
  stop();state.customSeed=seed;$('showCustom').checked=true;
  state.orbits[2]=orbit(seed,state.u,state.v,state.burn,state.steps);
  refreshOrbitDisplay();
 }
 function cancelCustomRequest(){cancelAnimationFrame(customRequest);customRequest=0;pendingCustom=null;}
-$('clearCustom').onclick=()=>{cancelCustomRequest();customDrag=null;state.customSeed=null;state.orbits.length=2;refreshOrbitDisplay();};
+$('clearCustom').onclick=()=>{cancelChaosSearch();state.customTrace=null;$('chaosStatus').textContent='Find a chaotic orbit using recurrent inverse branches, including repellers.';cancelCustomRequest();customDrag=null;state.customSeed=null;state.orbits.length=2;refreshOrbitDisplay();};
 function locateCustom(e,plot=cobwebPlot){
  if(!plot)return null;
  const r=$('cobweb').getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
@@ -95,6 +100,131 @@ $('cobweb').onpointerup=e=>{
  const seed=locateCustom(e,customDrag.plot).seed;cancelCustomRequest();setCustomSeed(seed);customDrag=null;drawOrbits();
 };
 $('cobweb').onpointercancel=$('cobweb').onlostpointercapture=()=>{if(customDrag){cancelCustomRequest();customDrag=null;drawOrbits();}};
+
+function chaoticOrbitSearch({u,v,offset=1}) {
+ const f=x=>((u-v)/2)*(4*x*x*x-3*x)+(u+v)/2;
+ const derivative=x=>Math.abs((u-v)*(6*x*x-1.5));
+ if(u===v)return {error:'This is a constant map, so its topological entropy is zero.'};
+ const bound=Math.max(2,Math.sqrt((1.5*Math.abs(u-v)+Math.abs((u+v)/2)+2)/(2*Math.abs(u-v))));
+ const margin=2e-12*Math.max(1,bound);
+ function lowerBound(a,value){let b=a.length;let lo=0;while(lo<b){const m=(lo+b)>>>1;if(a[m]<value)lo=m+1;else b=m;}return lo;}
+ function invert(target,a,b){
+  const increasing=f(b)>f(a);
+  for(let j=0;j<55;j++){const m=(a+b)/2;if(m===a||m===b)break;if((f(m)<target)===increasing)a=m;else b=m;}
+  const m=(a+b)/2;return [a,m,b].reduce((best,x)=>Math.abs(f(x)-target)<Math.abs(f(best)-target)?x:best,m);
+ }
+ function graph(resolution){
+  const cuts=[-bound,-.5,.5,bound];
+  let targets=[-.5,.5];
+  for(let depth=0;depth<4;depth++){
+   const next=[],laps=[-bound,-.5,.5,bound];
+   for(const y of targets)for(let j=0;j<3;j++){const a=laps[j],b=laps[j+1],fa=f(a),fb=f(b);if(y>Math.min(fa,fb)+margin&&y<Math.max(fa,fb)-margin){const x=invert(y,a,b);cuts.push(x);next.push(x);}}
+   targets=next;
+  }
+
+  for(const seed of [-.5,.5]){let x=seed;for(let i=0;i<resolution;i++){x=f(x);if(!Number.isFinite(x)||Math.abs(x)>=bound)break;cuts.push(x);}}
+  cuts.sort((a,b)=>a-b);
+  const edges=cuts.filter((x,i)=>i===0||x-cuts[i-1]>margin);
+  const n=edges.length-1,adj=Array.from({length:n},()=>[]),rev=Array.from({length:n},()=>[]),weights=new Float64Array(n);
+  for(let i=0;i<n;i++){
+   const a=edges[i],b=edges[i+1],fa=f(a),fb=f(b),lo=Math.min(fa,fb)-margin,hi=Math.max(fa,fb)+margin;
+   weights[i]=(a<=-.5&&b>=-.5)||(a<=.5&&b>=.5)?-Infinity:Math.log(Math.min(derivative(a),derivative(b)));
+   if(!Number.isFinite(weights[i]))continue;
+   for(let j=lowerBound(edges,lo);j<n&&edges[j+1]<=hi;j++){adj[i].push(j);rev[j].push(i);}
+  }
+  const seen=new Uint8Array(n),order=[];
+  for(let root=0;root<n;root++)if(!seen[root]){
+   const stack=[[root,0]];seen[root]=1;
+   while(stack.length){const top=stack[stack.length-1],neighbors=adj[top[0]];if(top[1]<neighbors.length){const j=neighbors[top[1]++];if(!seen[j]){seen[j]=1;stack.push([j,0]);}}else{order.push(top[0]);stack.pop();}}
+  }
+  const component=new Int32Array(n).fill(-1),groups=[];
+  for(let q=order.length-1;q>=0;q--){const root=order[q];if(component[root]>=0)continue;const id=groups.length,group=[],stack=[root];component[root]=id;while(stack.length){const i=stack.pop();group.push(i);for(const j of rev[i])if(component[j]<0){component[j]=id;stack.push(j);}}groups.push(group);}
+  let best=null,attempts=0;
+  const candidates=[];
+  for(let i=0;i<n;i++){const out=adj[i].filter(j=>component[i]===component[j]);if(out.length>=2)candidates.push({i,out});}
+  candidates.sort((a,b)=>b.out.length-a.out.length);
+  for(const {i:base,out} of candidates){
+   if(attempts++>=256)break;
+   const next=new Int32Array(n).fill(-1),queue=[base];next[base]=base;
+   for(let k=0;k<queue.length;k++){const i=queue[k];for(const j of rev[i])if(component[j]===component[base]&&next[j]<0){next[j]=i;queue.push(j);}}
+   const paths=[];
+   for(const target of out){
+    const path=[base];let j=target;
+    while(j!==base&&j>=0&&path.length<512){path.push(j);j=next[j];}
+    if(j!==base)continue;
+    const expansion=path.reduce((s,k)=>s+weights[k],0),rate=expansion/path.length;
+    if(expansion>.05&&rate>.001)paths.push({path,expansion,rate,target});
+   }
+   paths.sort((a,b)=>b.rate-a.rate);
+   if(paths.length<2)continue;
+   for(const p of paths){
+    let a=edges[base],b=edges[base+1];
+    for(let k=p.path.length-1;k>=0;k--){const j=p.path[k],x=invert(a,edges[j],edges[j+1]),y=invert(b,edges[j],edges[j+1]);a=Math.min(x,y);b=Math.max(x,y);}
+    p.interval=[a,b];
+   }
+   let pair=null;
+   for(let a=0;a<paths.length&&!pair;a++)for(let b=a+1;b<paths.length;b++){
+    const x=paths[a].interval,y=paths[b].interval;
+    if(x[1]-x[0]>margin&&y[1]-y[0]>margin&&(x[1]+margin<y[0]||y[1]+margin<x[0])){pair=[paths[a],paths[b]];break;}
+   }
+   if(!pair)continue;
+   const rate=Math.min(pair[0].rate,pair[1].rate);
+   if(!best||rate>best.rate)best={base,paths:pair,rate,edges,resolution};
+  }
+  return best;
+ }
+ let found=null;
+ for(const resolution of [64,256,1024]){found=graph(resolution);if(found)break;}
+ if(!found)return {error:'No expanding branching set was found at this search resolution. This does not mean the topological entropy is zero.'};
+ const {base,paths,edges,rate,resolution}=found;
+ const inverse=(target,index)=>{
+  return invert(target,edges[index],edges[index+1]);
+ };
+ // Concatenating successive binary integers supplies a nonperiodic sequence of return branches.
+ const count=104097,padding=Math.min(200000,Math.ceil(40/rate)+1024),indices=[];
+ let integer=Math.max(1,Math.trunc(offset));
+ while(indices.length<count+padding){for(const bit of integer.toString(2)){indices.push(...paths[+bit].path);}integer++;}
+ const values=new Float64Array(count);let x=(edges[base]+edges[base+1])/2,residual=0;
+ for(let i=indices.length-1;i>=0;i--){const y=inverse(x,indices[i]);if(i<count){values[i]=y;residual=Math.max(residual,Math.abs(f(y)-x));}x=y;}
+ if(!Number.isFinite(residual)||residual>1e-10*Math.max(1,bound))return {error:'The inverse-branch reconstruction did not meet the numerical accuracy check.'};
+ const symbols=Array.from(values.slice(0,128),x=>x<-.5?'L':x>.5?'R':'M').join('');
+ return {values,bound,residual,rate,resolution,returnLengths:paths.map(p=>p.path.length),symbols};
+}
+
+
+function customOrbit(){
+ if(state.customTrace)return {values:Array.from(state.customTrace.values.slice(state.burn,state.burn+state.steps+1)),escapedAt:null,bound:state.customTrace.bound};
+ return orbit(state.customSeed,state.u,state.v,state.burn,state.steps);
+}
+function cancelChaosSearch(){
+ if(chaosWorker){chaosWorker.terminate();chaosWorker=null;chaosGeneration++;$('findChaos').textContent='Find chaotic orbit';$('chaosStatus').textContent='Search cancelled.';}
+}
+function showChaosResult(){
+ const t=state.customTrace;let sum=0;const length=4096;
+ for(let i=state.burn;i<state.burn+length;i++)sum+=Math.log(Math.abs((state.u-state.v)*(6*t.values[i]*t.values[i]-1.5)));
+ const lambda=sum/length;
+ $('chaosStatus').textContent=`Symbolic orbit found · λ ≈ ${lambda.toFixed(4)} over ${length} iterates · inverse-branch residual ${t.residual.toExponential(1)}. The itinerary keeps this orbit on the expanding set; forward iteration of the rounded x₀ can drift away. Numerical construction, not a rigorous certificate.`;
+}
+$('findChaos').onclick=()=>{
+ if(chaosWorker){cancelChaosSearch();return;}
+ stop();cancelCustomRequest();customDrag=null;
+ const u=state.u,v=state.v,generation=++chaosGeneration;
+ $('findChaos').textContent='Cancel search';$('chaosStatus').textContent='Finding recurrent branching itineraries…';
+ const source=`${chaoticOrbitSearch.toString()}
+onmessage=event=>{try{const result=chaoticOrbitSearch(event.data);postMessage(result,result.values?[result.values.buffer]:[]);}catch(error){postMessage({error:'The orbit search could not finish. Please try again.'});}};`;
+ const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
+ try{chaosWorker=new Worker(url);}catch(error){URL.revokeObjectURL(url);$('findChaos').textContent='Find chaotic orbit';$('chaosStatus').textContent='Your browser could not start the orbit search.';return;}
+ URL.revokeObjectURL(url);
+ chaosWorker.onmessage=event=>{
+  if(generation!==chaosGeneration)return;
+  const result=event.data;chaosWorker.terminate();chaosWorker=null;$('findChaos').textContent='Find chaotic orbit';
+  if(result.error){$('chaosStatus').textContent=result.error;return;}
+  state.customTrace={...result,u,v};state.customSeed=result.values[0];$('showCustom').checked=true;
+  state.orbits[2]=customOrbit();showChaosResult();refreshOrbitDisplay();
+ };
+ chaosWorker.onerror=()=>{if(generation!==chaosGeneration)return;cancelChaosSearch();$('chaosStatus').textContent='The orbit search could not finish. Please try again.';};
+ chaosWorker.postMessage({u,v,offset:chaosOffset++});
+};
 
 function setParameters(u,v){state.u=Math.max(-2,Math.min(2,u));state.v=Math.max(-2,Math.min(2,v));recompute();}
 function apply(){const u=+$('u').value,v=+$('v').value;if(Number.isFinite(u)&&Number.isFinite(v))setParameters(u,v);}
@@ -125,7 +255,7 @@ let drag=null;
 $('parameter').onpointerdown=e=>{let p=locate(e);if(!p.inside)return;$('parameter').setPointerCapture(e.pointerId);drag={pan:e.shiftKey,x:e.clientX,y:e.clientY,view:state.view.slice()};if(!drag.pan)setParameters(p.u,p.v);};
 $('parameter').onpointermove=e=>{let p=locate(e);if(p.inside)$('hover').textContent=`u = ${p.u.toFixed(6)} · v = ${p.v.toFixed(6)}`;if(!drag)return;if(drag.pan){let [a,b,c,d]=drag.view,dx=(e.clientX-drag.x)/parameterPlot.box.w*(b-a),dy=(e.clientY-drag.y)/parameterPlot.box.h*(d-c);fitView(a-dx,b-dx,c+dy,d+dy);}else if(p.inside){clearTimeout(selectedTimer);selectedTimer=setTimeout(()=>setParameters(p.u,p.v),20);}};
 $('parameter').onpointerup=e=>{clearTimeout(selectedTimer);if(drag&&!drag.pan){let p=locate(e);if(p.inside)setParameters(p.u,p.v);}drag=null;};$('parameter').onpointercancel=()=>{clearTimeout(selectedTimer);drag=null;};
-$('download').onclick=()=>{const custom=state.customSeed!==null;let csv=`u,v,n,left_critical_orbit,right_critical_orbit${custom?',custom_initial_condition,custom_orbit':''}\n`,length=Math.max(...state.orbits.map(o=>o.values.length));for(let i=0;i<length;i++)csv+=`${state.u},${state.v},${state.burn+i},${state.orbits[0].values[i]??''},${state.orbits[1].values[i]??''}${custom?','+state.customSeed+','+(state.orbits[2].values[i]??''):''}\n`;const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download=`chebyshev-orbits-u${state.u.toFixed(6)}-v${state.v.toFixed(6)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('download').onclick=()=>{const custom=state.customSeed!==null;let csv=`u,v,n,left_critical_orbit,right_critical_orbit${custom?',custom_initial_condition,custom_orbit,custom_method,custom_lap':''}\n`,length=Math.max(...state.orbits.map(o=>o.values.length));for(let i=0;i<length;i++)csv+=`${state.u},${state.v},${state.burn+i},${state.orbits[0].values[i]??''},${state.orbits[1].values[i]??''}${custom?','+state.customSeed+','+(state.orbits[2].values[i]??'')+','+(state.customTrace?'inverse_branches':'forward')+','+(state.orbits[2].values[i]===undefined?'':state.orbits[2].values[i]<-.5?'L':state.orbits[2].values[i]>.5?'R':'M'):''}\n`;const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download=`chebyshev-orbits-u${state.u.toFixed(6)}-v${state.v.toFixed(6)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{drawParameter();drawOrbits();},80);});
 Promise.all(Object.entries(BACKGROUNDS).map(([key,src])=>new Promise((resolve,reject)=>{let im=new Image();images[key]=im;im.onload=resolve;im.onerror=reject;im.src=src;}))).then(recompute).catch(()=>{$('orbitStatus').textContent='Could not load the embedded parameter image.';});
 </script></body></html>
