@@ -16,13 +16,13 @@
 </section><section class="card"><div class="row between"><h2>Cobweb diagram</h2><div class="legend"><label class="red"><input id="showLeft" type="checkbox" checked> From −½</label><label class="blue"><input id="showRight" type="checkbox" checked> From +½</label><label class="purple"><input id="showCustom" type="checkbox" checked disabled> Custom</label></div></div>
 <div class="row controls"><label>Steps <input id="steps" type="number" value="80" min="1" max="2000" step="1"></label><label>Discard <input id="burn" type="number" value="0" min="0" max="100000" step="1"></label><button id="recompute">Update</button></div>
 <div class="row between controls"><span class="purple mono" id="customValue" aria-live="polite">Custom x₀: not set</span><div class="row"><button id="findChaos">Find chaotic orbit</button><button id="clearCustom" disabled>Clear custom orbit</button></div></div><p class="hint">Click or drag in the cobweb to set a custom x₀ using the horizontal position. Its orbit is calculated immediately.</p>
-<p class="hint" id="chaosStatus" role="status" aria-live="polite">Find a chaotic orbit using recurrent inverse branches, including repellers.</p>
+<p class="hint" id="chaosStatus" role="status" aria-live="polite">Find a chaotic itinerary from kneading sequences, including orbits on repellers.</p>
 <div class="canvas-wrap"><canvas id="cobweb" aria-label="Clickable cobweb diagram: select a custom initial condition by horizontal position"></canvas></div>
 <div class="row controls"><button id="restart" aria-label="Restart animation">↺</button><button id="play" class="primary">Play</button><button id="step">Step</button><input id="frame" aria-label="Displayed iterate count" type="range" min="0" max="80" value="80"><span id="frameValue" class="mono">80</span></div>
 <div class="row between"><label>View <select id="range"><option value="auto">Auto fit</option><option value="1">−1 to 1</option><option value="2">−2 to 2</option><option value="4">−4 to 4</option></select></label><span class="muted">Dark curve: f(x) · dashed line: y = x</span></div>
 <div class="series"><canvas id="series" aria-label="Orbit values versus iteration"></canvas></div><p class="hint">The cobweb starts on y = x. Each vertical segment applies f; each horizontal segment returns to the diagonal. Discard shifts the displayed starting iterate, while each orbit keeps its original initial condition. The purple diamond marks the custom x₀. A found chaotic orbit displays its full reconstructed trace; Steps controls the other orbits.</p>
 </section></main>
-<p class="footer">The backgrounds and contour geometry are fixed from saved 6000 × 6000 scans. Entropy is estimated for the continuous extension of the cubic to the compactified real line; it is not inferred from the Lyapunov exponents. Identical degree-64 kneading matrices share cached entropy estimates. Degree-32 comparisons and the calculation method are documented in the <a href="https://hinsley.github.io/dynamical-systems/projects/chebyshev-entropy-method.html">entropy notes</a>. Orbit values are calculated locally at your exact selected (u, v), rather than at the nearest grid sample. Manually selected initial conditions use forward iteration. The chaotic-orbit finder uses a numerically checked expanding return system and inverse branches to retain a nonperiodic symbolic itinerary, even on a repeller. Its CSV includes the method and lap symbols. It does not rerun the entropy sweep, and failure to find an orbit does not establish zero entropy. Chaotic trajectories may differ from the GPU trajectories through rounding. Escape is reported only after crossing a parameter-dependent bound that guarantees continued growth.</p>
+<p class="footer">The backgrounds and contour geometry are fixed from saved 6000 × 6000 scans. Entropy is estimated for the continuous extension of the cubic to the compactified real line; it is not inferred from the Lyapunov exponents. Identical degree-64 kneading matrices share cached entropy estimates. Degree-32 comparisons and the calculation method are documented in the <a href="https://hinsley.github.io/dynamical-systems/projects/chebyshev-entropy-method.html">entropy notes</a>. Orbit values are calculated locally at your exact selected (u, v), rather than at the nearest grid sample. Manually selected initial conditions use forward iteration. The chaotic-orbit finder uses kneading-sequence admissibility to construct a nonperiodic itinerary in a recurrent branching symbolic system, then reconstructs its coordinates using inverse branches. It checks the resulting orbit numerically, including positive Lyapunov averages, even on a repeller. Its CSV includes the method and lap symbols. It does not rerun the entropy sweep, and failure to find an orbit does not establish zero entropy. Chaotic trajectories may differ from the GPU trajectories through rounding. Escape is reported only after crossing a parameter-dependent bound that guarantees continued growth.</p>
 <script>
 'use strict';
 const BACKGROUNDS={heatmap:'chebyshev-assets/heatmap.webp',overlay:'chebyshev-assets/overlay.webp',entropy:'chebyshev-assets/entropy.webp',entropyOverlay:'chebyshev-assets/entropy_overlay.webp'};
@@ -77,7 +77,7 @@ function setCustomSeed(seed){
  refreshOrbitDisplay();
 }
 function cancelCustomRequest(){cancelAnimationFrame(customRequest);customRequest=0;pendingCustom=null;}
-$('clearCustom').onclick=()=>{cancelChaosSearch();state.customTrace=null;$('chaosStatus').textContent='Find a chaotic orbit using recurrent inverse branches, including repellers.';cancelCustomRequest();customDrag=null;state.customSeed=null;state.orbits.length=2;state.frame=Math.min(state.frame,state.steps);$('frame').max=state.steps;refreshOrbitDisplay();};
+$('clearCustom').onclick=()=>{cancelChaosSearch();state.customTrace=null;$('chaosStatus').textContent='Find a chaotic itinerary from kneading sequences, including orbits on repellers.';cancelCustomRequest();customDrag=null;state.customSeed=null;state.orbits.length=2;state.frame=Math.min(state.frame,state.steps);$('frame').max=state.steps;refreshOrbitDisplay();};
 function locateCustom(e,plot=cobwebPlot){
  if(!plot)return null;
  const r=$('cobweb').getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
@@ -103,95 +103,123 @@ $('cobweb').onpointerup=e=>{
 $('cobweb').onpointercancel=$('cobweb').onlostpointercapture=()=>{if(customDrag){cancelCustomRequest();customDrag=null;drawOrbits();}};
 
 function chaoticOrbitSearch({u,v,offset=1}) {
+ if(!Number.isFinite(u)||!Number.isFinite(v))return {error:'Choose finite parameters first.'};
+ if(u===v)return {error:'This is a constant map, so its topological entropy is zero.'};
  const f=x=>((u-v)/2)*(4*x*x*x-3*x)+(u+v)/2;
  const derivative=x=>Math.abs((u-v)*(6*x*x-1.5));
- if(u===v)return {error:'This is a constant map, so its topological entropy is zero.'};
+ const sign=Math.sign(u-v),orientation=[sign,-sign,sign];
  const bound=Math.max(2,Math.sqrt((1.5*Math.abs(u-v)+Math.abs((u+v)/2)+2)/(2*Math.abs(u-v))));
- const margin=2e-12*Math.max(1,bound);
- function lowerBound(a,value){let b=a.length;let lo=0;while(lo<b){const m=(lo+b)>>>1;if(a[m]<value)lo=m+1;else b=m;}return lo;}
- function invert(target,a,b){
-  const increasing=f(b)>f(a);
-  for(let j=0;j<55;j++){const m=(a+b)/2;if(m===a||m===b)break;if((f(m)<target)===increasing)a=m;else b=m;}
+ if(!Number.isFinite(bound))return {error:'The parameter separation is too small for a numerically resolved orbit search.'};
+ const laps=[-bound,-.5,.5,bound],images=[0,1,2].map(i=>[Math.min(f(laps[i]),f(laps[i+1])),Math.max(f(laps[i]),f(laps[i+1]))]);
+ // Even codes are open laps; odd codes are exact critical-point hits.
+ const code=x=>x<-.5?0:x===-.5?1:x<.5?2:x===.5?3:4;
+ function kneading(seed,depth){
+  const symbols=[],parity=[];let x=seed,p=1;
+  for(let k=0;k<depth;k++){
+   const s=code(x);symbols.push(s);parity.push(p);
+   if(s%2)break; // Any acritical candidate differs here; no tail is needed.
+   p*=orientation[s/2];
+   x=Math.abs(x)>bound?Math.sign(x)*sign*(bound+1):f(x);
+  }
+  return {symbols,parity};
+ }
+ function automaton(depth){
+  const K=[kneading(Math.max(u,v),depth),kneading(Math.min(u,v),depth)];
+  // Each pending constraint records an upper/lower comparison and the number
+  // of matching symbols. Its ordering sign comes from the matched K prefix.
+  const stride=depth+1,states=[[]],ids=new Map([['',0]]),adj=[],rev=[[]];
+  const starts=[[sign>0?0:stride],[0,stride],[sign>0?stride:0]];
+  for(let i=0;i<states.length;i++){
+   adj[i]=[];
+   for(let lap=0;lap<3;lap++){
+    const pending=[];let allowed=true;
+    for(const id of states[i]){
+     const b=id>=stride?1:0,k=id-b*stride;
+     const comparison=(2*lap-K[b].symbols[k])*K[b].parity[k];
+     if((b===0&&comparison>0)||(b===1&&comparison<0)){allowed=false;break;}
+     if(comparison===0){
+      // Strict inner approximation: matching the entire available prefix
+      // is unresolved, not proof that an infinite continuation is admissible.
+      if(k+1===K[b].symbols.length){allowed=false;break;}
+      pending.push(b*stride+k+1);
+     }
+    }
+    if(!allowed)continue;
+    pending.push(...starts[lap]);pending.sort((a,b)=>a-b);
+    const key=pending.join(',');let j=ids.get(key);
+    if(j===undefined){
+     if(states.length>=8192)return null;
+     j=states.length;ids.set(key,j);states.push(pending);rev.push([]);
+    }
+    adj[i].push({to:j,lap});rev[j].push({from:i,lap});
+   }
+  }
+  // Iterative Kosaraju: retain recurrent components, not transient words.
+  const seen=new Uint8Array(states.length),order=[];
+  for(let root=0;root<states.length;root++)if(!seen[root]){
+   const stack=[[root,0]];seen[root]=1;
+   while(stack.length){const top=stack[stack.length-1],edges=adj[top[0]];
+    if(top[1]<edges.length){const j=edges[top[1]++].to;if(!seen[j]){seen[j]=1;stack.push([j,0]);}}
+    else{order.push(top[0]);stack.pop();}
+   }
+  }
+  const component=new Int32Array(states.length).fill(-1);let nc=0;
+  for(let q=order.length-1;q>=0;q--){const root=order[q];if(component[root]>=0)continue;
+   const stack=[root];component[root]=nc;
+   while(stack.length){const i=stack.pop();for(const e of rev[i])if(component[e.from]<0){component[e.from]=nc;stack.push(e.from);}}
+   nc++;
+  }
+  const candidates=[];
+  for(let base=0;base<states.length;base++){
+   const out=adj[base].filter(e=>component[e.to]===component[base]);
+   if(out.length<2)continue;
+   const next=new Int32Array(states.length).fill(-1),nextLap=new Int8Array(states.length),queue=[base];next[base]=base;
+   for(let k=0;k<queue.length;k++)for(const e of rev[queue[k]])if(component[e.from]===component[base]&&next[e.from]<0){next[e.from]=queue[k];nextLap[e.from]=e.lap;queue.push(e.from);}
+   const paths=[];
+   for(const e of out){let j=e.to;const path=[e.lap];
+    while(j!==base&&j>=0&&path.length<512){path.push(nextLap[j]);j=next[j];}
+    if(j===base)paths.push(path);
+   }
+   if(paths.length>=2){paths.sort((a,b)=>a.length-b.length);candidates.push({paths:paths.slice(0,2),size:states.length,depth});}
+   if(candidates.length>=128)break;
+  }
+  candidates.sort((a,b)=>Math.max(...a.paths.map(p=>p.length))-Math.max(...b.paths.map(p=>p.length)));
+  return candidates;
+ }
+ function invert(target,lap){
+  let a=laps[lap],b=laps[lap+1];const increasing=orientation[lap]>0;
+  for(let j=0;j<56;j++){const m=(a+b)/2;if(m===a||m===b)break;if((f(m)<target)===increasing)a=m;else b=m;}
   const m=(a+b)/2;return [a,m,b].reduce((best,x)=>Math.abs(f(x)-target)<Math.abs(f(best)-target)?x:best,m);
  }
- function graph(resolution){
-  const cuts=[-bound,-.5,.5,bound];
-  let targets=[-.5,.5];
-  for(let depth=0;depth<4;depth++){
-   const next=[],laps=[-bound,-.5,.5,bound];
-   for(const y of targets)for(let j=0;j<3;j++){const a=laps[j],b=laps[j+1],fa=f(a),fb=f(b);if(y>Math.min(fa,fb)+margin&&y<Math.max(fa,fb)-margin){const x=invert(y,a,b);cuts.push(x);next.push(x);}}
-   targets=next;
+ function reconstruct(candidate){
+  const {paths}=candidate,count=104097,padding=4096,symbols=[];
+  // Successive binary integers contain every finite binary word. Distinct
+  // first labels make the two return words a prefix code, not two spellings
+  // of the same periodic word.
+  let integer=Math.max(1,Math.trunc(offset));
+  while(symbols.length<count+padding){for(const bit of integer.toString(2))for(const lap of paths[+bit])symbols.push(lap);integer++;}
+  const values=new Float64Array(count);let lo=-bound,hi=bound,maxWidth=0;
+  for(let i=symbols.length-1;i>=0;i--){
+   const lap=symbols[i],image=images[lap];lo=Math.max(lo,image[0]);hi=Math.min(hi,image[1]);
+   if(lo>hi)return null;
+   const a=invert(lo,lap),b=invert(hi,lap);lo=Math.min(a,b);hi=Math.max(a,b);
+   if(i<count){values[i]=(lo+hi)/2;maxWidth=Math.max(maxWidth,hi-lo);if(code(values[i])!==2*lap)return null;}
   }
-
-  for(const seed of [-.5,.5]){let x=seed;for(let i=0;i<resolution;i++){x=f(x);if(!Number.isFinite(x)||Math.abs(x)>=bound)break;cuts.push(x);}}
-  cuts.sort((a,b)=>a-b);
-  const edges=cuts.filter((x,i)=>i===0||x-cuts[i-1]>margin);
-  const n=edges.length-1,adj=Array.from({length:n},()=>[]),rev=Array.from({length:n},()=>[]),weights=new Float64Array(n);
-  for(let i=0;i<n;i++){
-   const a=edges[i],b=edges[i+1],fa=f(a),fb=f(b),lo=Math.min(fa,fb)-margin,hi=Math.max(fa,fb)+margin;
-   weights[i]=(a<=-.5&&b>=-.5)||(a<=.5&&b>=.5)?-Infinity:Math.log(Math.min(derivative(a),derivative(b)));
-   if(!Number.isFinite(weights[i]))continue;
-   for(let j=lowerBound(edges,lo);j<n&&edges[j+1]<=hi;j++){adj[i].push(j);rev[j].push(i);}
+  let residual=0,sum=0,minBlockLambda=Infinity;
+  for(let i=0;i<count;i++){
+   if(i+1<count)residual=Math.max(residual,Math.abs(f(values[i])-values[i+1]));
+   sum+=Math.log(derivative(values[i]));
+   if((i+1)%4096===0){minBlockLambda=Math.min(minBlockLambda,sum/4096);sum=0;}
   }
-  const seen=new Uint8Array(n),order=[];
-  for(let root=0;root<n;root++)if(!seen[root]){
-   const stack=[[root,0]];seen[root]=1;
-   while(stack.length){const top=stack[stack.length-1],neighbors=adj[top[0]];if(top[1]<neighbors.length){const j=neighbors[top[1]++];if(!seen[j]){seen[j]=1;stack.push([j,0]);}}else{order.push(top[0]);stack.pop();}}
-  }
-  const component=new Int32Array(n).fill(-1),groups=[];
-  for(let q=order.length-1;q>=0;q--){const root=order[q];if(component[root]>=0)continue;const id=groups.length,group=[],stack=[root];component[root]=id;while(stack.length){const i=stack.pop();group.push(i);for(const j of rev[i])if(component[j]<0){component[j]=id;stack.push(j);}}groups.push(group);}
-  let best=null,attempts=0;
-  const candidates=[];
-  for(let i=0;i<n;i++){const out=adj[i].filter(j=>component[i]===component[j]);if(out.length>=2)candidates.push({i,out});}
-  candidates.sort((a,b)=>b.out.length-a.out.length);
-  for(const {i:base,out} of candidates){
-   if(attempts++>=256)break;
-   const next=new Int32Array(n).fill(-1),queue=[base];next[base]=base;
-   for(let k=0;k<queue.length;k++){const i=queue[k];for(const j of rev[i])if(component[j]===component[base]&&next[j]<0){next[j]=i;queue.push(j);}}
-   const paths=[];
-   for(const target of out){
-    const path=[base];let j=target;
-    while(j!==base&&j>=0&&path.length<512){path.push(j);j=next[j];}
-    if(j!==base)continue;
-    const expansion=path.reduce((s,k)=>s+weights[k],0),rate=expansion/path.length;
-    if(expansion>.05&&rate>.001)paths.push({path,expansion,rate,target});
-   }
-   paths.sort((a,b)=>b.rate-a.rate);
-   if(paths.length<2)continue;
-   for(const p of paths){
-    let a=edges[base],b=edges[base+1];
-    for(let k=p.path.length-1;k>=0;k--){const j=p.path[k],x=invert(a,edges[j],edges[j+1]),y=invert(b,edges[j],edges[j+1]);a=Math.min(x,y);b=Math.max(x,y);}
-    p.interval=[a,b];
-   }
-   let pair=null;
-   for(let a=0;a<paths.length&&!pair;a++)for(let b=a+1;b<paths.length;b++){
-    const x=paths[a].interval,y=paths[b].interval;
-    if(x[1]-x[0]>margin&&y[1]-y[0]>margin&&(x[1]+margin<y[0]||y[1]+margin<x[0])){pair=[paths[a],paths[b]];break;}
-   }
-   if(!pair)continue;
-   const rate=Math.min(pair[0].rate,pair[1].rate);
-   if(!best||rate>best.rate)best={base,paths:pair,rate,edges,resolution};
-  }
-  return best;
+  if(!Number.isFinite(residual)||residual>1e-10*Math.max(1,bound)||maxWidth>1e-10*Math.max(1,bound)||!(minBlockLambda>1e-4))return null;
+  return {values,bound,residual,maxWidth,minBlockLambda,kneadingDepth:candidate.depth,symbolicStates:candidate.size,returnLengths:paths.map(p=>p.length),symbols:Array.from(values.slice(0,128),x=>'LMR'[code(x)/2]).join(''),method:'kneading-symbolic-inverse'};
  }
- let found=null;
- for(const resolution of [64,256,1024]){found=graph(resolution);if(found)break;}
- if(!found)return {error:'No expanding branching set was found at this search resolution. This does not mean the topological entropy is zero.'};
- const {base,paths,edges,rate,resolution}=found;
- const inverse=(target,index)=>{
-  return invert(target,edges[index],edges[index+1]);
- };
- // Concatenating successive binary integers supplies a nonperiodic sequence of return branches.
- const count=104097,padding=Math.min(200000,Math.ceil(40/rate)+1024),indices=[];
- let integer=Math.max(1,Math.trunc(offset));
- while(indices.length<count+padding){for(const bit of integer.toString(2)){indices.push(...paths[+bit].path);}integer++;}
- const values=new Float64Array(count);let x=(edges[base]+edges[base+1])/2,residual=0;
- for(let i=indices.length-1;i>=0;i--){const y=inverse(x,indices[i]);if(i<count){values[i]=y;residual=Math.max(residual,Math.abs(f(y)-x));}x=y;}
- if(!Number.isFinite(residual)||residual>1e-10*Math.max(1,bound))return {error:'The inverse-branch reconstruction did not meet the numerical accuracy check.'};
- const symbols=Array.from(values.slice(0,128),x=>x<-.5?'L':x>.5?'R':'M').join('');
- return {values,bound,residual,rate,resolution,returnLengths:paths.map(p=>p.path.length),symbols};
+ for(const depth of [16,32,64,128,256]){
+  const candidates=automaton(depth);if(!candidates)continue;
+  for(const candidate of candidates.slice(0,12)){const result=reconstruct(candidate);if(result)return result;}
+ }
+ return {error:'No chaotic itinerary was resolved within the symbolic search budget. This does not establish zero topological entropy.'};
 }
-
 
 function customOrbit(){
  if(state.customTrace)return {values:state.customTrace.values.subarray(state.burn),escapedAt:null,bound:state.customTrace.bound};
@@ -204,13 +232,13 @@ function showChaosResult(){
  const t=state.customTrace;let sum=0;const length=4096;
  for(let i=state.burn;i<state.burn+length;i++)sum+=Math.log(Math.abs((state.u-state.v)*(6*t.values[i]*t.values[i]-1.5)));
  const lambda=sum/length;
- $('chaosStatus').textContent=`Symbolic orbit found · λ ≈ ${lambda.toFixed(4)} over ${length} iterates · inverse-branch residual ${t.residual.toExponential(1)}. The itinerary keeps this orbit on the expanding set; forward iteration of the rounded x₀ can drift away. Numerical construction, not a rigorous certificate.`;
+ $('chaosStatus').textContent=`Kneading-symbolic orbit found · λ ≈ ${lambda.toFixed(4)} over ${length} iterates · inverse-branch residual ${t.residual.toExponential(1)}. The saved itinerary retains the repelling orbit; forward iteration of the rounded x₀ can drift away. Numerical construction, not a rigorous certificate.`;
 }
 $('findChaos').onclick=()=>{
  if(chaosWorker){cancelChaosSearch();return;}
  stop();cancelCustomRequest();customDrag=null;
  const u=state.u,v=state.v,generation=++chaosGeneration;
- $('findChaos').textContent='Cancel search';$('chaosStatus').textContent='Finding recurrent branching itineraries…';
+ $('findChaos').textContent='Cancel search';$('chaosStatus').textContent='Finding admissible branching itineraries from kneading sequences…';
  const source=`${chaoticOrbitSearch.toString()}
 onmessage=event=>{try{const result=chaoticOrbitSearch(event.data);postMessage(result,result.values?[result.values.buffer]:[]);}catch(error){postMessage({error:'The orbit search could not finish. Please try again.'});}};`;
  const url=URL.createObjectURL(new Blob([source],{type:'text/javascript'}));
@@ -256,7 +284,7 @@ let drag=null;
 $('parameter').onpointerdown=e=>{let p=locate(e);if(!p.inside)return;$('parameter').setPointerCapture(e.pointerId);drag={pan:e.shiftKey,x:e.clientX,y:e.clientY,view:state.view.slice()};if(!drag.pan)setParameters(p.u,p.v);};
 $('parameter').onpointermove=e=>{let p=locate(e);if(p.inside)$('hover').textContent=`u = ${p.u.toFixed(6)} · v = ${p.v.toFixed(6)}`;if(!drag)return;if(drag.pan){let [a,b,c,d]=drag.view,dx=(e.clientX-drag.x)/parameterPlot.box.w*(b-a),dy=(e.clientY-drag.y)/parameterPlot.box.h*(d-c);fitView(a-dx,b-dx,c+dy,d+dy);}else if(p.inside){clearTimeout(selectedTimer);selectedTimer=setTimeout(()=>setParameters(p.u,p.v),20);}};
 $('parameter').onpointerup=e=>{clearTimeout(selectedTimer);if(drag&&!drag.pan){let p=locate(e);if(p.inside)setParameters(p.u,p.v);}drag=null;};$('parameter').onpointercancel=()=>{clearTimeout(selectedTimer);drag=null;};
-$('download').onclick=()=>{const custom=state.customSeed!==null;let csv=`u,v,n,left_critical_orbit,right_critical_orbit${custom?',custom_initial_condition,custom_orbit,custom_method,custom_lap':''}\n`,length=Math.max(...state.orbits.map(o=>o.values.length));for(let i=0;i<length;i++)csv+=`${state.u},${state.v},${state.burn+i},${state.orbits[0].values[i]??''},${state.orbits[1].values[i]??''}${custom?','+state.customSeed+','+(state.orbits[2].values[i]??'')+','+(state.customTrace?'inverse_branches':'forward')+','+(state.orbits[2].values[i]===undefined?'':state.orbits[2].values[i]<-.5?'L':state.orbits[2].values[i]>.5?'R':'M'):''}\n`;const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download=`chebyshev-orbits-u${state.u.toFixed(6)}-v${state.v.toFixed(6)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('download').onclick=()=>{const custom=state.customSeed!==null;let csv=`u,v,n,left_critical_orbit,right_critical_orbit${custom?',custom_initial_condition,custom_orbit,custom_method,custom_lap':''}\n`,length=Math.max(...state.orbits.map(o=>o.values.length));for(let i=0;i<length;i++)csv+=`${state.u},${state.v},${state.burn+i},${state.orbits[0].values[i]??''},${state.orbits[1].values[i]??''}${custom?','+state.customSeed+','+(state.orbits[2].values[i]??'')+','+(state.customTrace?'kneading_symbolic_inverse':'forward')+','+(state.orbits[2].values[i]===undefined?'':state.orbits[2].values[i]<-.5?'L':state.orbits[2].values[i]>.5?'R':'M'):''}\n`;const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'})),a=document.createElement('a');a.href=url;a.download=`chebyshev-orbits-u${state.u.toFixed(6)}-v${state.v.toFixed(6)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{drawParameter();drawOrbits();},80);});
 Promise.all(Object.entries(BACKGROUNDS).map(([key,src])=>new Promise((resolve,reject)=>{let im=new Image();images[key]=im;im.onload=resolve;im.onerror=reject;im.src=src;}))).then(recompute).catch(()=>{$('orbitStatus').textContent='Could not load the embedded parameter image.';});
 </script></body></html>
